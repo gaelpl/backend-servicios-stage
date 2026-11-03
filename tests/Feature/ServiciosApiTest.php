@@ -154,9 +154,25 @@ class ServiciosApiTest extends TestCase
         $this->assertSame('El cliente ya no requiere el servicio', $response->json('data.motivo_cancelacion'));
     }
 
+    public function test_cancelar_solicitud_fuera_de_recibida_retorna_conflicto(): void
+    {
+        $solicitud = $this->crearSolicitud(['estado' => 'asignada']);
+
+        $response = $this->postJson("/api/servicios/solicitudes/{$solicitud->folio}/cancelar", [
+            'motivo' => 'El cliente ya no requiere el servicio',
+        ]);
+
+        $response->assertStatus(409);
+        $this->assertSame('CONFLICT', $response->json('error.code'));
+        $this->assertDatabaseHas('solicituds', [
+            'folio' => $solicitud->folio,
+            'estado' => 'asignada',
+        ]);
+    }
+
     public function test_calificacion_ciclo_completo(): void
     {
-        $solicitud = $this->crearSolicitud();
+        $solicitud = $this->crearSolicitud(['estado' => 'terminada']);
 
         $this->getJson("/api/servicios/solicitudes/{$solicitud->folio}/calificacion")
             ->assertStatus(204);
@@ -172,15 +188,31 @@ class ServiciosApiTest extends TestCase
             ->assertJsonPath('data.comentario', 'Excelente servicio');
     }
 
+    public function test_calificar_solicitud_no_terminada_retorna_conflicto(): void
+    {
+        $solicitud = $this->crearSolicitud();
+
+        $response = $this->postJson("/api/servicios/solicitudes/{$solicitud->folio}/calificacion", [
+            'puntuacion' => 5,
+        ]);
+
+        $response->assertStatus(409);
+        $this->assertSame('CONFLICT', $response->json('error.code'));
+        $this->assertDatabaseCount('calificaciones', 0);
+    }
+
     public function test_crear_solicitud_con_solo_descripcion_aplica_defaults(): void
     {
+        $tipo = $this->crearCatalogo();
+
         $response = $this->postJson('/api/servicios/solicitudes', [
-            'descripcion' => 'Fuga de agua en tubería principal',
+            'tipo_servicio_id' => $tipo->id,
+            'descripcion_problema' => 'Fuga de agua en tubería principal',
         ]);
 
         $response->assertStatus(201);
         $this->assertSame('Fuga de agua en tubería principal', $response->json('data.descripcion_problema'));
-        $this->assertSame('Dirección registrada', $response->json('data.direccion_linea_1'));
+        $this->assertSame('Sin dirección', $response->json('data.direccion_linea_1'));
         $this->assertSame('81200', $response->json('data.codigo_postal'));
         $this->assertSame(now()->toDateString(), $response->json('data.fecha_preferida'));
     }

@@ -93,8 +93,13 @@ class SolicitudController extends Controller
     {
         $solicitud = Solicitud::where('folio', $folio)->firstOrFail();
 
-        if ($solicitud->estado === Solicitud::ESTADO_CANCELADA) {
-            return ApiResponse::error('CONFLICT', 'La solicitud ya se encuentra cancelada.', [], 409);
+        if ($solicitud->estado !== Solicitud::ESTADO_RECIBIDA) {
+            return ApiResponse::error(
+                'CONFLICT',
+                'Solo se pueden cancelar solicitudes en estado recibida.',
+                ['estado_actual' => $solicitud->estado],
+                409,
+            );
         }
 
         $validated = $request->validate([
@@ -113,6 +118,15 @@ class SolicitudController extends Controller
     public function storeCalificacion(Request $request, string $folio)
     {
         $solicitud = Solicitud::where('folio', $folio)->firstOrFail();
+
+        if ($solicitud->estado !== Solicitud::ESTADO_TERMINADA) {
+            return ApiResponse::error(
+                'CONFLICT',
+                'Solo se pueden calificar servicios terminados.',
+                ['estado_actual' => $solicitud->estado],
+                409,
+            );
+        }
 
         if ($solicitud->calificacion()->exists()) {
             return ApiResponse::error('CONFLICT', 'La solicitud ya cuenta con una calificación.', [], 409);
