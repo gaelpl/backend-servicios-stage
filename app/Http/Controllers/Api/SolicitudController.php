@@ -9,6 +9,7 @@ use App\Models\Solicitud;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class SolicitudController extends Controller
 {
@@ -29,6 +30,7 @@ class SolicitudController extends Controller
         $perPage = max(1, min($perPage, 100));
 
         $query = Solicitud::query()
+            ->where('cliente_id', 1)
             ->with(['prestador', 'tipoServicio', 'calificacion'])
             ->latest('created_at');
 
@@ -61,17 +63,20 @@ class SolicitudController extends Controller
             'costo_total' => 'nullable|numeric|min:0',
         ]);
 
-        $solicitud = Solicitud::create([
-            ...$validated,
-            'folio' => $this->generarFolio(),
-            'estado' => Solicitud::ESTADO_RECIBIDA,
-            'cliente_id' => $request->input('cliente_id', 1),
-            'direccion_linea_1' => $validated['direccion_linea_1'] ?? 'Sin dirección',
-            'codigo_postal' => $validated['codigo_postal'] ?? '81200',
-            'fecha_preferida' => isset($validated['fecha_preferida']) && $validated['fecha_preferida']
-                ? Carbon::parse($validated['fecha_preferida'])->toDateString()
-                : now()->toDateString(),
-        ]);
+        $validated['cliente_id'] = 1;
+
+        $solicitud = DB::transaction(function () use ($validated) {
+            return Solicitud::create([
+                ...$validated,
+                'folio' => $this->generarFolio(),
+                'estado' => Solicitud::ESTADO_RECIBIDA,
+                'direccion_linea_1' => $validated['direccion_linea_1'] ?? 'Sin dirección',
+                'codigo_postal' => $validated['codigo_postal'] ?? '81200',
+                'fecha_preferida' => isset($validated['fecha_preferida']) && $validated['fecha_preferida']
+                    ? Carbon::parse($validated['fecha_preferida'])->toDateString()
+                    : now()->toDateString(),
+            ]);
+        });
 
         return ApiResponse::success(
             (new SolicitudResource($solicitud->load(['prestador', 'tipoServicio', 'calificacion'])))->resolve(),
@@ -85,6 +90,15 @@ class SolicitudController extends Controller
             ->with(['prestador', 'tipoServicio', 'calificacion'])
             ->where('folio', $folio)
             ->firstOrFail();
+
+        if ($solicitud->cliente_id !== 1) {
+            return ApiResponse::error(
+                'FORBIDDEN',
+                'No tiene permisos para acceder a esta solicitud.',
+                [],
+                403,
+            );
+        }
 
         return ApiResponse::success((new SolicitudResource($solicitud))->resolve());
     }
@@ -165,6 +179,7 @@ class SolicitudController extends Controller
         $ultimo = Solicitud::query()
             ->where('folio', 'like', $prefix.'%')
             ->orderByDesc('folio')
+            ->lockForUpdate()
             ->value('folio');
 
         $consecutivo = $ultimo ? ((int) substr($ultimo, strlen($prefix))) + 1 : 1;

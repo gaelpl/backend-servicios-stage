@@ -13,7 +13,7 @@ class ArchivoController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'archivo' => 'required|file|max:10240',
+            'archivo' => 'required|file|mimes:jpg,jpeg,png,webp|max:2048',
         ]);
 
         $file = $validated['archivo'];
